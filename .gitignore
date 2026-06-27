@@ -31,3 +31,6 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Фичи на будущее. Заметки на полях
+feature/_BE*
