@@ -116,6 +116,12 @@ jwt.expiration-ms=${JWT_EXPIRATION_MS:3600000}
 ## Шаг 3. `UserRepository` — добавить `findByEmail`
 
 Для входа нужно достать `User` целиком (с `passwordHash`), чтобы сверить пароль.
+Новые импорты к уже существующим в файле (`@Query`, `@Param` там уже есть):
+
+```java
+import expence_tracker.backend.user.entity.User;   // уже импортирован в файле
+import java.util.Optional;                          // уже импортирован в файле
+```
 
 ```java
 // Возвращаем Optional: пользователя с таким email может не быть.
@@ -132,6 +138,20 @@ Optional<User> findByEmail(@Param("email") String email);
 ## Шаг 4. `JwtTokenProvider` (пакет `auth`)
 
 Отдельный компонент-бин: умеет **создать** токен и **разобрать/проверить** его.
+
+```java
+package expence_tracker.backend.auth;
+
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.Date;
+```
 
 ```java
 @Component
@@ -184,6 +204,14 @@ public class JwtTokenProvider {
 `LoginRequest` — вход принимает только email и пароль:
 
 ```java
+package expence_tracker.backend.auth.dto;
+
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import lombok.Data;
+```
+
+```java
 @Data
 public class LoginRequest {
     @NotBlank @Email
@@ -195,6 +223,14 @@ public class LoginRequest {
 ```
 
 `AuthResponse` — что отдаём после register/login:
+
+```java
+package expence_tracker.backend.auth.dto;
+
+import expence_tracker.backend.user.dto.UserResponse;
+import lombok.Builder;
+import lombok.Data;
+```
 
 ```java
 @Data
@@ -211,6 +247,22 @@ public class AuthResponse {
 
 Сердце фичи. Регистрацию **делегируем** в `UserService` (не дублируем создание),
 для логина — достаём сущность и сверяем пароль.
+
+```java
+package expence_tracker.backend.auth;
+
+import expence_tracker.backend.auth.dto.AuthResponse;
+import expence_tracker.backend.auth.dto.LoginRequest;
+import expence_tracker.backend.user.UserRepository;
+import expence_tracker.backend.user.UserService;
+import expence_tracker.backend.user.dto.CreateUserRequest;
+import expence_tracker.backend.user.dto.UserResponse;
+import expence_tracker.backend.user.entity.User;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+```
 
 ```java
 @Service
@@ -265,6 +317,24 @@ public class AuthService {
 сработает один раз за запрос.
 
 ```java
+package expence_tracker.backend.auth;
+
+import io.jsonwebtoken.JwtException;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import java.io.IOException;
+import java.util.Collections;
+```
+
+```java
 @Component
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -315,6 +385,20 @@ Authorities (роли/права) пока пустые — ролей в про
 превращается в **500**. Заводим `@RestControllerAdvice`, чтобы маппить исключения в человеческие коды.
 
 ```java
+package expence_tracker.backend.common;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+import java.util.HashMap;
+import java.util.Map;
+```
+
+```java
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -357,6 +441,18 @@ public class GlobalExceptionHandler {
 не так, как мы хотим. Entry point гарантирует чистый **401**.
 
 ```java
+package expence_tracker.backend.common;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.web.AuthenticationEntryPoint;
+import org.springframework.stereotype.Component;
+
+import java.io.IOException;
+```
+
+```java
 @Component
 public class RestAuthenticationEntryPoint implements AuthenticationEntryPoint {
     @Override
@@ -373,6 +469,17 @@ public class RestAuthenticationEntryPoint implements AuthenticationEntryPoint {
 
 Меняем временный `permitAll()` на реальные правила, включаем stateless и встраиваем JWT-фильтр.
 `PasswordEncoder`-бин оставляем как есть.
+
+Добавить к уже имеющимся импортам файла:
+
+```java
+import expence_tracker.backend.auth.JwtAuthenticationFilter;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+// RestAuthenticationEntryPoint лежит в этом же пакете common — импорт не нужен
+// (уже есть: HttpSecurity, EnableWebSecurity, AbstractHttpConfigurer, SecurityFilterChain,
+//  BCryptPasswordEncoder, PasswordEncoder, Bean, Configuration)
+```
 
 ```java
 @Bean
@@ -405,6 +512,21 @@ public SecurityFilterChain filterChain(
 ---
 
 ## Шаг 10. `AuthController` (пакет `auth`)
+
+```java
+package expence_tracker.backend.auth;
+
+import expence_tracker.backend.auth.dto.AuthResponse;
+import expence_tracker.backend.auth.dto.LoginRequest;
+import expence_tracker.backend.user.UserService;
+import expence_tracker.backend.user.dto.CreateUserRequest;
+import expence_tracker.backend.user.dto.UserResponse;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.*;
+```
 
 ```java
 @RestController
