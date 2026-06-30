@@ -133,6 +133,15 @@ Optional<User> findByEmail(@Param("email") String email);
 > Можно было бы положиться на «магию» Spring Data (метод `findByEmail` без `@Query` Spring сгенерит сам
 > по имени), но в проекте принято писать JPQL явно — придерживаемся стиля.
 
+> ⚠️ **Ловушка (проверено на практике):** в `SELECT` должна стоять сама сущность — `SELECT u`,
+> а не её поля. Тип в `SELECT` обязан совпадать с возвращаемым типом метода, и компилятор это НЕ ловит —
+> `@Query` валидируется Hibernate только в рантайме:
+> - `SELECT u` → `User` ✅
+> - `SELECT u.email` → `String` → каст в `User` даёт `ClassCastException`
+> - `SELECT u.id, u.name, ...` → `Object[]` → `ConverterNotFoundException` (`ArrayToObjectConverter`)
+>
+> Перечислять поля нужно только для осознанной проекции (DTO / интерфейс-проекция).
+
 ---
 
 ## Шаг 4. `JwtTokenProvider` (пакет `auth`)
