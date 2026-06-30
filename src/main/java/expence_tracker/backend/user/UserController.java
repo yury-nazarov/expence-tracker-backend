@@ -18,22 +18,19 @@ public class UserController {
     private final UserService userService;
 
     @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    public UserResponse create(@RequestBody @Valid CreateUserRequest request) {
+    public ResponseEntity<UserResponse> create(@RequestBody @Valid CreateUserRequest request) {
         // @Valid запускает проверки DTO
-        return userService.create(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(userService.create(request));
     }
 
     @GetMapping("/{id}")
-    @ResponseStatus(HttpStatus.OK)
-    public UserResponse getById(@PathVariable Long id){
-        return userService.getById(id);
+    public ResponseEntity<UserResponse> getById(@PathVariable Long id){
+        return ResponseEntity.ok().body(userService.getById(id));
     }
 
     @GetMapping("/list")
-    @ResponseStatus(HttpStatus.OK)
-    public List<UserResponse> getAll() {
-        return userService.getAll();
+    public ResponseEntity<List<UserResponse>> getAll() {
+        return ResponseEntity.ok().body(userService.getAll());
     }
 
     @GetMapping("/me")
